@@ -4,6 +4,9 @@ Cody's real-time voice synthesis service. Runs on **i2pa** (RTX 5080), served
 over the LAN as an OpenAI-compatible TTS endpoint, consumed by the OpenClaw
 gateway (QQ voice messages, voice calls, ear channel) via an SSH tunnel.
 
+**Repo**: `github.com/i2cy/qwen3tts-voice` (public) — local clone at
+`/home/icy/.openclaw/voice-service` (codyserver).
+
 ## Architecture
 
 ```
@@ -55,6 +58,30 @@ GET /health → {"ok": true, "model_loaded": bool, "idle_s": n}
   `ssh -fN -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -C -i ~/.ssh/id_ed25519_i2proart -L 8100:127.0.0.1:8100 i2cy@192.168.11.179`
   (`-C` = compression for the flac/wav payload).
 - Update code: `./deploy.sh --restart`.
+
+## Development workflow
+
+- Edit code in this repo (codyserver), commit + push to GitHub.
+- `./deploy.sh --restart` → pushes `qwen3tts_server.py` to i2pa and restarts
+  the schtasks service. **Code on i2pa is a deployment artifact, never edit it
+  in place** — always change the repo and deploy.
+- Verify: `curl http://127.0.0.1:8100/health` (through the tunnel) and a test
+  synth; check `E:\Services\qwen3tts\qwen3tts_server.log` on i2pa.
+
+## Known issues / gotchas
+
+- `generate_voice_clone` on the Base model has **no `instruct` param** —
+  passing an empty string degrades output quality; only forward non-empty.
+- The model returns **float32 arrays**; writing them raw into a 16-bit WAV
+  yields loud static — always convert via `soundfile` (PCM_16).
+- Flash-attn external lib is **not buildable** on i2pa (no MSVC/CUDA toolkit);
+  torch 2.13 SDPA already dispatches to built-in flash kernels on sm_120 —
+  confirmed working, RTF ≈ 1.3 is the real ceiling.
+- i2pa LAN: only port 22 crosses the bridge — the gateway reaches :8100 via
+  SSH tunnel with `-C`. Firewall rules on i2pa already allow :8100.
+- Fine-tuned checkpoints (`output_v2/`) exist on i2pa but are parked: Base +
+  fixed-ref clone sounds best to dad; revisit fine-tune with lr 3e-6 if the
+  timbre ever needs to drift from the Fidget reference.
 
 ## Notes / history
 
