@@ -216,11 +216,66 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
+def start_tray(port):
+    """System-tray icon (Windows). Run with `pythonw.exe --tray` so no console
+    window appears; the tray offers status/health, log file, and quit."""
+    try:
+        import pystray
+        from PIL import Image, ImageDraw
+    except ImportError:
+        log("--tray requested but pystray/Pillow missing (pip install pystray pillow)")
+        return
+
+    img = Image.new("RGB", (64, 64), (20, 20, 20))
+    d = ImageDraw.Draw(img)
+    d.ellipse((10, 10, 54, 54), fill=(120, 180, 255))
+    d.polygon([(22, 40), (22, 24), (42, 32)], fill=(255, 255, 255))
+
+    def status_text():
+        if host.loaded():
+            idle = host.idle_s()
+            return "model loaded (idle %ds)" % idle
+        return "model unloaded"
+
+    def on_status(_icon, _item):
+        import webbrowser
+        webbrowser.open("http://127.0.0.1:%d/health" % port)
+
+    def on_log(_icon, _item):
+        import os
+        try:
+            os.startfile(os.path.join(BASE_DIR, "qwen3tts_server.log"))
+        except Exception as e:
+            log("open log failed: %s" % e)
+
+    def on_quit(_icon, _item):
+        _icon.stop()
+        log("tray quit requested, exiting")
+        os._exit(0)
+
+    icon = pystray.Icon(
+        "cody-voice",
+        img,
+        "Cody Voice Service v1",
+        menu=pystray.Menu(
+            pystray.MenuItem(lambda item: "Voice: " + status_text(), action=None, enabled=False),
+            pystray.MenuItem("Status / health", on_status),
+            pystray.MenuItem("Open log file", on_log),
+            pystray.MenuItem("Quit service", on_quit),
+        ),
+    )
+    threading.Thread(target=icon.run, daemon=True).start()
+    log("tray icon started")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8100)
     ap.add_argument("--host", default="0.0.0.0")
+    ap.add_argument("--tray", action="store_true", help="show system-tray icon (Windows, pythonw)")
     args = ap.parse_args()
+    if args.tray:
+        start_tray(args.port)
     srv = ThreadingHTTPServer((args.host, args.port), Handler)
     log("qwen3tts voice server v1 listening on %s:%d (idle unload %ds)" % (args.host, args.port, IDLE_UNLOAD_S))
     srv.serve_forever()

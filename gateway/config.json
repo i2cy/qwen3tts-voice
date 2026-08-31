@@ -1,0 +1,21 @@
+{
+  "listen": "127.0.0.1:8120",
+  "backend": "http://127.0.0.1:8100",
+  "backendTimeoutMs": 120000,
+  "apiKeys": ["cody-voice-local"],
+  "requireAuth": false,
+  "defaults": {
+    "voice": "cody",
+    "language": "Auto",
+    "maxTokens": 900,
+    "format": "wav",
+    "backendFormat": "flac"
+  },
+  "cache": {
+    "maxEntries": 512,
+    "ttlSeconds": 3600
+  },
+  "health": {
+    "backendPath": "/health"
+  }
+}

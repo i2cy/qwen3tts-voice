@@ -1,0 +1,13 @@
+[Unit]
+Description=Cody Voice Gateway (Qwen3-TTS wrapper, flac transport + cache)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/icy/.openclaw/voice-service/gateway
+ExecStart=/home/icy/.openclaw/voice-service/gateway/qwen3tts-gateway /home/icy/.openclaw/voice-service/gateway/config.json
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
