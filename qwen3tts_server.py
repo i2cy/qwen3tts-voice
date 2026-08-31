@@ -128,11 +128,11 @@ def synth(text, language, instruct, max_tokens):
             language=language if language and language != "Auto" else None,
             voice_clone_prompt=prompt,
             max_new_tokens=max_tokens,
+            # explicit empty instruct ("" != absent) gives a calmer, cuter
+            # pacing — dad-picked (Aug 31). Callers may override with real
+            # emotion/pacing instructions, forwarded verbatim.
+            instruct=instruct or "",
         )
-        # generate_voice_clone has NO instruct/emo_text param — passing empty
-        # strings as kwargs degrades the clone. Only forward non-empty extras.
-        if instruct:
-            kwargs["instruct"] = instruct
         w, sr = model.generate_voice_clone(**kwargs)
         return w[0], sr
     finally:
