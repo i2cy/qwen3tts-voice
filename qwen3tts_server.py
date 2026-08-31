@@ -124,7 +124,9 @@ def synth(text, language, instruct, max_tokens):
     prompt = host.get_prompt()
     try:
         kwargs = dict(
-            text=text,
+            # leading space slows/paces delivery more naturally (dad-picked,
+            # Aug 31: "Wow!!..." exclaim with leading space beats raw start)
+            text=" " + text,
             language=language if language and language != "Auto" else None,
             voice_clone_prompt=prompt,
             max_new_tokens=max_tokens,
