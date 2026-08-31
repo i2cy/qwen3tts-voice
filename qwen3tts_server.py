@@ -45,10 +45,11 @@ def log(msg):
 
 
 class ModelHost:
-    """Lazy-loads the model; unloads after IDLE_UNLOAD_S of inactivity."""
+    """Lazy-loads the model + clone prompt; unloads after IDLE_UNLOAD_S."""
 
     def __init__(self):
         self._model = None
+        self._prompt = None
         self._last_use = 0.0
         self._lock = threading.Lock()
         self._idle_timer = None
@@ -65,16 +66,25 @@ class ModelHost:
             attn_implementation="sdpa",
         )
         log("model loaded in %.2fs (ref=%s)" % (time.time() - t0, os.path.basename(REF_AUDIO)))
-        return m
+        # build the voice-clone prompt ONCE and reuse it for every request:
+        # create_voice_clone_prompt re-encodes the ref audio (~0.9s) each call.
+        t1 = time.time()
+        p = m.create_voice_clone_prompt(ref_audio=REF_AUDIO, ref_text=REF_TEXT)
+        log("clone prompt built in %.2fs (cached for reuse)" % (time.time() - t1))
+        return m, p
 
     def get(self):
         with self._lock:
             if self._model is None:
-                self._model = self._load()
+                self._model, self._prompt = self._load()
             self._last_use = time.time()
             if self._idle_timer:
                 self._idle_timer.cancel()
             return self._model
+
+    def get_prompt(self):
+        self.get()
+        return self._prompt
 
     def _unload(self):
         with self._lock:
@@ -84,6 +94,7 @@ class ModelHost:
 
             torch.cuda.empty_cache()
             self._model = None
+            self._prompt = None
             gc.collect()
             torch.cuda.empty_cache()
             log("model unloaded (idle > %ds), GPU + RAM released" % IDLE_UNLOAD_S)
@@ -110,12 +121,12 @@ host = ModelHost()
 
 def synth(text, language, instruct, max_tokens):
     model = host.get()
+    prompt = host.get_prompt()
     try:
         kwargs = dict(
             text=text,
             language=language if language and language != "Auto" else None,
-            ref_audio=REF_AUDIO,
-            ref_text=REF_TEXT,
+            voice_clone_prompt=prompt,
             max_new_tokens=max_tokens,
         )
         # generate_voice_clone has NO instruct/emo_text param — passing empty
