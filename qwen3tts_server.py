@@ -29,6 +29,7 @@ REF_TEXT = "It sure did! You know what I'm thinking? I'm thinking we find anothe
 DEFAULT_LANG = "Auto"
 IDLE_UNLOAD_S = 3600  # 1h no calls -> release GPU + RAM
 TAIL_PAD_S = 0.5       # pad silence so QQ's end-fade doesn't clip the last word
+DEFAULT_SEED = 42      # dad-picked seed (Aug 31) — 42 sounds best; 0 = random
 
 _log_lock = threading.Lock()
 
@@ -119,10 +120,17 @@ class ModelHost:
 host = ModelHost()
 
 
-def synth(text, language, instruct, max_tokens):
+def synth(text, language, instruct, max_tokens, seed):
     model = host.get()
     prompt = host.get_prompt()
     try:
+        # fixed seed = stable pacing/timbre (dad-picked 42, Aug 31).
+        # seed=0 means random. Callers may override per request.
+        if seed:
+            import torch
+
+            torch.manual_seed(seed)
+            torch.cuda.manual_seed_all(seed)
         kwargs = dict(
             # leading space slows/paces delivery more naturally (dad-picked,
             # Aug 31: "Wow!!..." exclaim with leading space beats raw start)
@@ -183,11 +191,13 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": "input required"})
         language = body.get("language", DEFAULT_LANG)
         instruct = body.get("instruct") or body.get("emo_text") or ""
+        raw_seed = body.get("seed", DEFAULT_SEED)
+        seed = int(raw_seed) if raw_seed not in (None, "", 0) else 0
         max_tokens = int(body.get("max_tokens", 900))
 
         t0 = time.time()
         try:
-            wav, sr = synth(text, language, instruct, max_tokens)
+            wav, sr = synth(text, language, instruct, max_tokens, seed)
         except Exception as e:
             import traceback
 
