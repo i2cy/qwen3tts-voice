@@ -27,9 +27,10 @@ MODEL_PATH = os.path.join(BASE_DIR, "Base-1.7B")
 REF_AUDIO_EN = os.path.join(BASE_DIR, "fidget_ref_53_24k.wav")
 REF_TEXT_EN = "It sure did! You know what I'm thinking? I'm thinking we find another one."
 # dad-picked Chinese reference (Sep 03 2026): the warm reply he loved from the
-# orangeBox ("嘿，我在呢，dad…"). Chinese synthesis uses this clip so the
-# voice/pacing matches that line; English keeps the original Fidget ref.
-REF_AUDIO_ZH = os.path.join(BASE_DIR, "zh_ref_dad_20260903.wav")
+# orangeBox ("嘿，我在呢，dad…"), pitch-preserved speed-up x1.2 so Chinese
+# pacing feels livelier (dad listened 1.0/1.1/1.2/1.3/1.4x, picked 1.2x).
+# Chinese synthesis uses this clip; English keeps the original Fidget ref.
+REF_AUDIO_ZH = os.path.join(BASE_DIR, "zh_ref_dad_12x_20260903.wav")
 REF_TEXT_ZH = "嘿，我在呢，dad。大半夜的还惦记着试试这个橙色小盒子呀——我听得很清楚哦。怎么啦？"
 DEFAULT_LANG = "Auto"
 IDLE_UNLOAD_S = 3600  # 1h no calls -> release GPU + RAM
