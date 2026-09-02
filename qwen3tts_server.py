@@ -142,7 +142,7 @@ def _lang_key(text, language):
     return "zh" if cjk >= max(2, len(text) // 20) else "en"
 
 
-def synth(text, language, instruct, max_tokens, seed):
+def synth(text, language, instruct, max_tokens, seed, leading_space=True):
     model = host.get()
     lang_key = _lang_key(text, language)
     prompt = host.get_prompt(lang_key)
@@ -156,8 +156,10 @@ def synth(text, language, instruct, max_tokens, seed):
             torch.cuda.manual_seed_all(seed)
         kwargs = dict(
             # leading space slows/paces delivery more naturally (dad-picked,
-            # Aug 31: "Wow!!..." exclaim with leading space beats raw start)
-            text=" " + text,
+            # Aug 31: "Wow!!..." exclaim with leading space beats raw start).
+            # Chinese replies may prefer no leading space (faster, more natural
+            # attack) — controllable per request via body["leading_space"].
+            text=(" " + text) if leading_space else text,
             language=language if language and language != "Auto" else None,
             voice_clone_prompt=prompt,
             max_new_tokens=max_tokens,
@@ -220,10 +222,13 @@ class Handler(BaseHTTPRequestHandler):
         raw_seed = body.get("seed", DEFAULT_SEED)
         seed = int(raw_seed) if raw_seed not in (None, "", 0) else 0
         max_tokens = int(body.get("max_tokens", 900))
+        leading_space = body.get("leading_space", True)
+        if not isinstance(leading_space, bool):
+            leading_space = str(leading_space).lower() not in ("false", "0", "no")
 
         t0 = time.time()
         try:
-            wav, sr = synth(text, language, instruct, max_tokens, seed)
+            wav, sr = synth(text, language, instruct, max_tokens, seed, leading_space)
         except Exception as e:
             import traceback
 
