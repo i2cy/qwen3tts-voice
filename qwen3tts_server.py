@@ -24,8 +24,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH = os.path.join(BASE_DIR, "Base-1.7B")
-REF_AUDIO = os.path.join(BASE_DIR, "fidget_ref_53_24k.wav")
-REF_TEXT = "It sure did! You know what I'm thinking? I'm thinking we find another one."
+REF_AUDIO_EN = os.path.join(BASE_DIR, "fidget_ref_53_24k.wav")
+REF_TEXT_EN = "It sure did! You know what I'm thinking? I'm thinking we find another one."
+# dad-picked Chinese reference (Sep 03 2026): the warm reply he loved from the
+# orangeBox ("嘿，我在呢，dad…"). Chinese synthesis uses this clip so the
+# voice/pacing matches that line; English keeps the original Fidget ref.
+REF_AUDIO_ZH = os.path.join(BASE_DIR, "zh_ref_dad_20260903.wav")
+REF_TEXT_ZH = "嘿，我在呢，dad。大半夜的还惦记着试试这个橙色小盒子呀——我听得很清楚哦。怎么啦？"
 DEFAULT_LANG = "Auto"
 IDLE_UNLOAD_S = 3600  # 1h no calls -> release GPU + RAM
 TAIL_PAD_S = 0.5       # pad silence so QQ's end-fade doesn't clip the last word
@@ -50,7 +55,7 @@ class ModelHost:
 
     def __init__(self):
         self._model = None
-        self._prompt = None
+        self._prompts = {}
         self._last_use = 0.0
         self._lock = threading.Lock()
         self._idle_timer = None
@@ -66,26 +71,31 @@ class ModelHost:
             dtype=torch.bfloat16,
             attn_implementation="sdpa",
         )
-        log("model loaded in %.2fs (ref=%s)" % (time.time() - t0, os.path.basename(REF_AUDIO)))
-        # build the voice-clone prompt ONCE and reuse it for every request:
+        log("model loaded in %.2fs" % (time.time() - t0))
+        # build BOTH voice-clone prompts ONCE and reuse for every request:
         # create_voice_clone_prompt re-encodes the ref audio (~0.9s) each call.
-        t1 = time.time()
-        p = m.create_voice_clone_prompt(ref_audio=REF_AUDIO, ref_text=REF_TEXT)
-        log("clone prompt built in %.2fs (cached for reuse)" % (time.time() - t1))
-        return m, p
+        self._prompts = {}
+        for key, ref_audio, ref_text, label in (
+            ("en", REF_AUDIO_EN, REF_TEXT_EN, "fidget_en"),
+            ("zh", REF_AUDIO_ZH, REF_TEXT_ZH, "zh_dad_20260903"),
+        ):
+            t1 = time.time()
+            self._prompts[key] = m.create_voice_clone_prompt(ref_audio=ref_audio, ref_text=ref_text)
+            log("clone prompt[%s] built in %.2fs (cached)" % (label, time.time() - t1))
+        return m
 
     def get(self):
         with self._lock:
             if self._model is None:
-                self._model, self._prompt = self._load()
+                self._model = self._load()
             self._last_use = time.time()
             if self._idle_timer:
                 self._idle_timer.cancel()
             return self._model
 
-    def get_prompt(self):
+    def get_prompt(self, lang_key="en"):
         self.get()
-        return self._prompt
+        return self._prompts.get(lang_key) or self._prompts["en"]
 
     def _unload(self):
         with self._lock:
@@ -95,7 +105,7 @@ class ModelHost:
 
             torch.cuda.empty_cache()
             self._model = None
-            self._prompt = None
+            self._prompts = {}
             gc.collect()
             torch.cuda.empty_cache()
             log("model unloaded (idle > %ds), GPU + RAM released" % IDLE_UNLOAD_S)
@@ -120,9 +130,22 @@ class ModelHost:
 host = ModelHost()
 
 
+def _lang_key(text, language):
+    """Choose the voice reference: Chinese ref for Chinese requests / CJK-heavy
+    text, English ref otherwise (Auto falls back to content detection)."""
+    if language and language.lower().startswith("zh"):
+        return "zh"
+    if language and language.lower() == "english":
+        return "en"
+    # Auto / None: detect CJK presence
+    cjk = sum(1 for ch in text if "\u4e00" <= ch <= "\u9fff")
+    return "zh" if cjk >= max(2, len(text) // 20) else "en"
+
+
 def synth(text, language, instruct, max_tokens, seed):
     model = host.get()
-    prompt = host.get_prompt()
+    lang_key = _lang_key(text, language)
+    prompt = host.get_prompt(lang_key)
     try:
         # fixed seed = stable pacing/timbre (dad-picked 42, Aug 31).
         # seed=0 means random. Callers may override per request.
@@ -173,7 +196,10 @@ class Handler(BaseHTTPRequestHandler):
                 "ok": True,
                 "model_loaded": host.loaded(),
                 "idle_s": host.idle_s(),
-                "ref": os.path.basename(REF_AUDIO),
+                "refs": {
+                    "en": os.path.basename(REF_AUDIO_EN),
+                    "zh": os.path.basename(REF_AUDIO_ZH),
+                },
             })
         self._json(404, {"error": "not found"})
 
