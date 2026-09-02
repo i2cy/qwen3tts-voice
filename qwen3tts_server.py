@@ -34,7 +34,11 @@ REF_TEXT_ZH = "嘿，我在呢，dad。大半夜的还惦记着试试这个橙�
 DEFAULT_LANG = "Auto"
 IDLE_UNLOAD_S = 3600  # 1h no calls -> release GPU + RAM
 TAIL_PAD_S = 0.5       # pad silence so QQ's end-fade doesn't clip the last word
-DEFAULT_SEED = 42      # dad-picked seed (Aug 31) — 42 sounds best; 0 = random
+DEFAULT_SEED = 42      # English seed (dad-picked Aug 31). Chinese seed: 21
+                       # (dad-picked Sep 03, no leading space — livelier pacing).
+DEFAULT_SEED_ZH = 21
+DEFAULT_LS_EN = True   # English: leading space paces naturally (dad Aug 31)
+DEFAULT_LS_ZH = False  # Chinese: no leading space — dad-picked Sep 03
 
 _log_lock = threading.Lock()
 
@@ -218,11 +222,15 @@ class Handler(BaseHTTPRequestHandler):
         if not text:
             return self._json(400, {"error": "input required"})
         language = body.get("language", DEFAULT_LANG)
+        is_zh = _lang_key(text, language) == "zh"
         instruct = body.get("instruct") or body.get("emo_text") or ""
-        raw_seed = body.get("seed", DEFAULT_SEED)
+        # language-aware defaults: en=seed42+leading space, zh=seed21+no space.
+        # explicit body values always win.
+        raw_seed = body.get("seed", DEFAULT_SEED_ZH if is_zh else DEFAULT_SEED)
         seed = int(raw_seed) if raw_seed not in (None, "", 0) else 0
         max_tokens = int(body.get("max_tokens", 900))
-        leading_space = body.get("leading_space", True)
+        ls_default = DEFAULT_LS_ZH if is_zh else DEFAULT_LS_EN
+        leading_space = body.get("leading_space", ls_default)
         if not isinstance(leading_space, bool):
             leading_space = str(leading_space).lower() not in ("false", "0", "no")
 
